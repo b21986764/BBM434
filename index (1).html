@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Sensor Data Charts</title>
+    <script src="https://cdn.socket.io/3.1.3/socket.io.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <style>
+        .chart-container {
+            display: flex; /* Use flexbox to align chart and stats */
+            flex-direction: column; /* Stack them vertically */
+            margin-bottom: 40px; /* Space between chart groups */
+            align-items: center; /* Center charts */
+        }
+        .chart-wrapper {
+            display: flex; /* Use flexbox to align chart and stats */
+            align-items: center; /* Align items vertically */
+            margin-bottom: 200px; /* Space between each chart */
+        }
+        canvas {
+            width: 450px; /* Reduced width for canvas */
+            height: 200px; /* Reduced height for canvas */
+        }
+        .stats {
+            display: flex; /* Use flexbox for stats */
+            flex-direction: column; /* Stack stats vertically */
+            justify-content: center; /* Center stats vertically */
+            padding-left: 20px; /* Space between chart and stats */
+            font-size: 30px; /* Increased font size for better visibility */
+            min-width: 200px; /* Ensure stats block does not shrink */
+        }
+        button {
+            margin-right: 5px;
+            padding: 5px 10px;
+	    font-size: 40px;
+        }
+        #charts-container {
+            margin-top: 20px;
+        }
+        #3d-container {
+            width: 800px; 
+            height: 600px;
+            margin: auto;
+        }
+    </style>
+</head>
+<body>
+    <h1>Sensor Data from Arduino Nano 33 BLE</h1>
+    <div id="3d-container"></div>
+    <div>
+        <button onclick="showCharts('acc')">Accelerometer</button>
+        <button onclick="showCharts('gyro')">Gyroscope</button>
+        <button onclick="showCharts('mag')">Magnetometer</button>
+        <button onclick="showCharts('comp')">Roll/Pitch/Yaw</button>
+    </div>
+    <div id="charts-container">
+        <div id="accCharts" class="chart-container">
+            <div class="chart-wrapper">
+                <canvas id="accXChart"></canvas>
+                <div id="accXStats" class="stats"></div>
+            </div>
+            <div class="chart-wrapper">
+                <canvas id="accYChart"></canvas>
+                <div id="accYStats" class="stats"></div>
+            </div>
+            <div class="chart-wrapper">
+                <canvas id="accZChart"></canvas>
+                <div id="accZStats" class="stats"></div>
+            </div>
+        </div>
+        <div id="gyroCharts" class="chart-container">
+            <div class="chart-wrapper">
+                <canvas id="gyroXChart"></canvas>
+                <div id="gyroXStats" class="stats"></div>
+            </div>
+            <div class="chart-wrapper">
+                <canvas id="gyroYChart"></canvas>
+                <div id="gyroYStats" class="stats"></div>
+            </div>
+            <div class="chart-wrapper">
+                <canvas id="gyroZChart"></canvas>
+                <div id="gyroZStats" class="stats"></div>
+            </div>
+        </div>
+        <div id="magCharts" class="chart-container">
+            <div class="chart-wrapper">
+                <canvas id="magXChart"></canvas>
+                <div id="magXStats" class="stats"></div>
+            </div>
+            <div class="chart-wrapper">
+                <canvas id="magYChart"></canvas>
+                <div id="magYStats" class="stats"></div>
+            </div>
+            <div class="chart-wrapper">
+                <canvas id="magZChart"></canvas>
+                <div id="magZStats" class="stats"></div>
+            </div>
+        </div>
+        <div id="compCharts" class="chart-container">
+            <div class="chart-wrapper">
+                <canvas id="compRollChart"></canvas>
+                <div id="compRollStats" class="stats"></div>
+            </div>
+            <div class="chart-wrapper">
+                <canvas id="compPitchChart"></canvas>
+                <div id="compPitchStats" class="stats"></div>
+            </div>
+            <div class="chart-wrapper">
+                <canvas id="compYawChart"></canvas>
+                <div id="compYawStats" class="stats"></div>
+            </div>
+        </div>
+    </div>
+    
+
+    <script>
+        var socket = io.connect();
+        
+        var accXData = [], accYData = [], accZData = [];
+        var gyroXData = [], gyroYData = [], gyroZData = [];
+        var magXData = [], magYData = [], magZData = [];
+	var compRollData = [], compPitchData = [], compYawData = [];
+
+        function createChart(ctx, data, label) {
+            return new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: Array(data.length).fill(''),
+                    datasets: [{
+                        label: label,
+                        data: data,
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    scales: {
+                        y: {
+                            beginAtZero: true
+                        }
+                    }
+                }
+            });
+        }
+
+        var accXChart = createChart(document.getElementById('accXChart'), accXData, 'Accelerometer X');
+        var accYChart = createChart(document.getElementById('accYChart'), accYData, 'Accelerometer Y');
+        var accZChart = createChart(document.getElementById('accZChart'), accZData, 'Accelerometer Z');
+        var gyroXChart = createChart(document.getElementById('gyroXChart'), gyroXData, 'Gyroscope X');
+        var gyroYChart = createChart(document.getElementById('gyroYChart'), gyroYData, 'Gyroscope Y');
+        var gyroZChart = createChart(document.getElementById('gyroZChart'), gyroZData, 'Gyroscope Z');
+        var magXChart = createChart(document.getElementById('magXChart'), magXData, 'Magnetometer X');
+        var magYChart = createChart(document.getElementById('magYChart'), magYData, 'Magnetometer Y');
+        var magZChart = createChart(document.getElementById('magZChart'), magZData, 'Magnetometer Z');
+        var compRollChart = createChart(document.getElementById('compRollChart'), compRollData, 'Complementary Roll');
+        var compPitchChart = createChart(document.getElementById('compPitchChart'), compPitchData, 'Complementary Pitch');
+        var compYawChart = createChart(document.getElementById('compYawChart'), compYawData, 'Complementary Yaw');
+	let scene, camera, renderer, cube;
+
+document.addEventListener('DOMContentLoaded', function() {
+    init3DScene(); // Initialize the 3D scene
+    showCharts(''); // Hide all charts initially
+});
+
+function init3DScene() {
+    scene = new THREE.Scene();
+    camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+    renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    document.getElementById('3d-container').appendChild(renderer.domElement);
+
+    // Add a directional light to show shadows
+    var light = new THREE.DirectionalLight(0xffffff, 1);
+    light.position.set(0, 1, 1).normalize();
+    scene.add(light);
+
+    // Define geometry and material with wireframe
+    const geometry = new THREE.BoxGeometry(1, 1, 1);
+    const material = new THREE.MeshPhongMaterial({
+        color: 0x00ff00,
+        polygonOffset: true,
+        polygonOffsetFactor: 1, // positive value pushes polygon further away
+        polygonOffsetUnits: 1
+    });
+    const wireframeMaterial = new THREE.LineBasicMaterial({ color: 0xffffff });
+    const wireframe = new THREE.LineSegments(
+        new THREE.EdgesGeometry(geometry),
+        wireframeMaterial
+    );
+
+    cube = new THREE.Mesh(geometry, material);
+    cube.add(wireframe); // add wireframe as a child of the cube mesh
+    scene.add(cube);
+
+    camera.position.z = 5;
+
+    animate();
+}
+
+function animate() {
+    requestAnimationFrame(animate);
+    renderer.render(scene, camera);
+}
+
+function updateCubeOrientation(roll, pitch, yaw) {
+    if (cube) {
+        if (roll !== null) cube.rotation.z = roll * Math.PI / 180;
+        if (pitch !== null) cube.rotation.x = pitch * Math.PI / 180;
+        if (yaw !== null) cube.rotation.y = yaw * Math.PI / 180;
+    }
+}
+
+        socket.on('sensor_data', function(data) {
+    var sensorType = data.data.split(':')[0];
+    var values = data.data.split(':')[1].split(',');
+    var x = parseFloat(values[0]), y = parseFloat(values[1]), z = parseFloat(values[2]);
+
+    if (sensorType === 'a') {
+        updateChartData(accXChart, accXData, x, 'accXStats');
+        updateChartData(accYChart, accYData, y, 'accYStats');
+        updateChartData(accZChart, accZData, z, 'accZStats');
+    } else if (sensorType === 'g') {
+        updateChartData(gyroXChart, gyroXData, x, 'gyroXStats');
+        updateChartData(gyroYChart, gyroYData, y, 'gyroYStats');
+        updateChartData(gyroZChart, gyroZData, z, 'gyroZStats');
+    } else if (sensorType === 'm') {
+        updateChartData(magXChart, magXData, x, 'magXStats');
+        updateChartData(magYChart, magYData, y, 'magYStats');
+        updateChartData(magZChart, magZData, z, 'magZStats');
+    } else if (sensorType === 'r') {
+        updateChartData(compRollChart, compRollData, x, 'compRollStats');
+	updateCubeOrientation(x, null, null); // Update roll for 3D cube
+        // For roll, pitch, yaw, only x, y, or z is used respectively
+    } else if (sensorType === 'p') {
+        updateChartData(compPitchChart, compPitchData, x, 'compPitchStats');
+        updateCubeOrientation(null, x, null); // Update pitch for 3D cube
+    } else if (sensorType === 'y') {
+        updateChartData(compYawChart, compYawData, x, 'compYawStats');
+        updateCubeOrientation(null, null, x); // Update yaw for 3D cube
+    }
+});
+
+        function updateChartData(chart, data, newValue, statsDivId) {
+            if (data.length > 50) {
+                data.shift();
+                chart.data.labels.shift();
+            }
+            data.push(newValue);
+            chart.data.labels.push('');
+            chart.update();
+
+            // Update statistics
+            updateStats(data, statsDivId);
+        }
+
+        function updateStats(dataArray, statsDivId) {
+            var avg = dataArray.reduce((a, b) => a + b, 0) / dataArray.length;
+            var min = Math.min(...dataArray);
+            var max = Math.max(...dataArray);
+            var stdDev = Math.sqrt(dataArray.map(x => Math.pow(x - avg, 2)).reduce((a, b) => a + b) / dataArray.length);
+
+            document.getElementById(statsDivId).innerHTML = `Avg: ${avg.toFixed(2)}, Min: ${min.toFixed(2)}, Max: ${max.toFixed(2)}, Std Dev: ${stdDev.toFixed(2)}`;
+        }
+
+        // Function to show charts based on button clicked
+        function showCharts(sensorType) {
+            // Hide all chart containers
+            document.getElementById('accCharts').style.display = 'none';
+            document.getElementById('gyroCharts').style.display = 'none';
+            document.getElementById('magCharts').style.display = 'none';
+	    document.getElementById('compCharts').style.display = 'none';
+
+            // Show the selected chart container
+            document.getElementById(sensorType + 'Charts').style.display = 'block';
+        }
+        
+        // Call showCharts on page load to ensure all charts are hidden initially
+        document.addEventListener('DOMContentLoaded', function() {
+            showCharts('');
+        });
+    </script>
+</body>
+</html>
